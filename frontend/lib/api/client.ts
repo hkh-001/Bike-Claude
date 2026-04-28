@@ -107,12 +107,14 @@ export const api = {
       request<StationGeoFeatureCollection>("/api/dashboard/stations/geojson"),
     trends24h: () => request<DashboardTrend24h>("/api/dashboard/trends/24h"),
     regions: () => request<RegionRankingItem[]>("/api/dashboard/regions"),
+    gridRegions: () => request<GridRegionsResponse>("/api/dashboard/regions/grid"),
     stations: (query?: { risk_type?: StationRiskType | null }) =>
       request<RiskStationItem[]>("/api/dashboard/stations", { query }),
     alerts: (query?: {
       level?: "info" | "warning" | "critical" | null;
       status?: string;
       limit?: number;
+      mode?: "real" | "mock";
     }) => request<RecentAlertItem[]>("/api/dashboard/alerts", { query }),
     etlHealth: () => request<EtlFeedHealth[]>("/api/dashboard/etl/health"),
     stationDetail: (code: string) =>
@@ -149,6 +151,11 @@ export type DashboardKPI = {
   total_docks_available: number;
   avg_occupancy_rate: number;
   alerts: { info: number; warning: number; critical: number };
+  /** 系统最近一次成功 ETL 抓取时间（推荐用于"最近抓取"展示） */
+  system_updated_at: string | null;
+  /** GBFS 官方最近上报时间 */
+  source_reported_at: string | null;
+  /** 兼容字段，同 system_updated_at */
   last_updated: string | null;
 };
 
@@ -161,6 +168,20 @@ export type RegionRankingItem = {
   bikes_total: number;
   avg_occupancy: number;
   open_alerts: number;
+};
+
+export type GridRegionItem = {
+  grid_code: string;
+  label: string;
+  station_count: number;
+  available_bikes: number;
+  avg_occupancy_rate: number;
+  capacity: number;
+  alert_count: number;
+};
+
+export type GridRegionsResponse = {
+  items: GridRegionItem[];
 };
 
 export type StationRiskType =

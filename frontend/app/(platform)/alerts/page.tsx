@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Filter } from "lucide-react";
+import { AlertTriangle, Filter, Database, Eye } from "lucide-react";
 import { useAlerts } from "@/lib/hooks/use-alerts";
 import { useAppSettings } from "@/lib/hooks/use-app-settings";
 import { Badge } from "@/components/ui/badge";
@@ -26,12 +26,14 @@ const STATUS_FILTERS: { label: string; value: string }[] = [
 export default function AlertsPage() {
   const [level, setLevel] = useState<"info" | "warning" | "critical" | null>(null);
   const [status, setStatus] = useState<string>("open");
+  const [mode, setMode] = useState<"real" | "mock">("real");
   const { settings } = useAppSettings();
   const { data, isLoading, error } = useAlerts(
     level,
     status,
     200,
     settings.alertRefreshInterval,
+    mode,
   );
 
   const stats = data?.reduce(
@@ -44,6 +46,16 @@ export default function AlertsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Mock 提示 Banner */}
+      {mode === "mock" && (
+        <div className="flex items-center gap-2 rounded-lg border border-[var(--neon-amber)]/30 bg-[var(--neon-amber)]/[0.06] px-4 py-2.5 text-sm text-[var(--neon-amber)]">
+          <Database className="h-4 w-4 shrink-0" />
+          <span>
+            当前展示的是 Mock 演示告警，仅用于课堂展示，不代表真实 Citi Bike 数据。
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -53,16 +65,53 @@ export default function AlertsPage() {
           <div>
             <h1 className="text-lg font-semibold text-foreground">告警中心</h1>
             <p className="text-xs text-muted-foreground">
-              {data ? `${data.length} 条告警` : "加载中…"} · 实时推送
+              {data ? `${data.length} 条${mode === "mock" ? "演示" : ""}告警` : "加载中…"} · {mode === "real" ? "真实数据源" : "Mock 演示"}
             </p>
           </div>
         </div>
-        <Badge
-          variant="outline"
-          className="border-[var(--neon-amber)]/30 text-[var(--neon-amber)] w-fit"
-        >
-          实时
-        </Badge>
+        <div className="flex items-center gap-2">
+          {/* 模式切换 */}
+          <div className="flex items-center rounded-lg border border-border/40 bg-card/40 p-0.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMode("real")}
+              className={cn(
+                "h-7 gap-1.5 text-xs px-3",
+                mode === "real"
+                  ? "bg-[var(--neon-lime)]/10 text-[var(--neon-lime)]"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              真实告警
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMode("mock")}
+              className={cn(
+                "h-7 gap-1.5 text-xs px-3",
+                mode === "mock"
+                  ? "bg-[var(--neon-amber)]/10 text-[var(--neon-amber)]"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Eye className="h-3 w-3" />
+              演示告警
+            </Button>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              "w-fit",
+              mode === "real"
+                ? "border-[var(--neon-lime)]/30 text-[var(--neon-lime)]"
+                : "border-[var(--neon-amber)]/30 text-[var(--neon-amber)]"
+            )}
+          >
+            {mode === "real" ? "当前数据源" : "Mock 演示"}
+          </Badge>
+        </div>
       </div>
 
       {/* Filters */}

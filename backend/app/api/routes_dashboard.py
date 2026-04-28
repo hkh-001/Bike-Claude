@@ -13,6 +13,8 @@ from app.schemas.dashboard import (
     DashboardSummary,
     DashboardTrend24h,
     EtlFeedHealth,
+    GridRegionItem,
+    GridRegionsResponse,
     RecentAlertItem,
     RegionRankingItem,
     RisksResponse,
@@ -72,6 +74,25 @@ def regions(session: Session = Depends(get_session)) -> list[RegionRankingItem]:
     return dashboard_service.get_regions(session)
 
 
+@router.get("/regions/grid", response_model=GridRegionsResponse, summary="经纬度网格运营片区")
+def grid_regions(session: Session = Depends(get_session)) -> GridRegionsResponse:
+    """基于站点经纬度网格划分的运营片区统计（复用首页 operational_area_ranking 逻辑）."""
+    areas = dashboard_service.get_operational_area_ranking(session, limit=50)
+    items = [
+        GridRegionItem(
+            grid_code=a.area_id,
+            label=a.area_name,
+            station_count=a.station_count,
+            available_bikes=a.bikes_total,
+            avg_occupancy_rate=float(round(a.avg_occupancy, 4)),
+            capacity=a.capacity_total,
+            alert_count=0,
+        )
+        for a in areas
+    ]
+    return GridRegionsResponse(items=items)
+
+
 @router.get("/stations", response_model=list[RiskStationItem], summary="全部站点列表")
 def stations(
     session: Session = Depends(get_session),
@@ -86,8 +107,9 @@ def alerts(
     level: Literal["info", "warning", "critical"] | None = None,
     status: str = Query(default="open"),
     limit: int = Query(default=100, ge=1, le=500),
+    mode: Literal["real", "mock"] = Query(default="real"),
 ) -> list[RecentAlertItem]:
-    return dashboard_service.get_alerts(session, level=level, status=status, limit=limit)
+    return dashboard_service.get_alerts(session, level=level, status=status, limit=limit, mode=mode)
 
 
 @router.get("/etl/health", response_model=list[EtlFeedHealth], summary="ETL Feed 健康状态")

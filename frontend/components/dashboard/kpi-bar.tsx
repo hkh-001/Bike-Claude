@@ -94,15 +94,19 @@ export function KpiBar({ kpi }: KpiBarProps) {
         hint={`紧急 ${kpi.alerts?.critical ?? 0} · 警告 ${kpi.alerts?.warning ?? 0} · 提示 ${kpi.alerts?.info ?? 0}`}
       />
       <MetricCard
-        label="上次更新"
+        label="最近抓取"
         accent="muted"
         icon={<Clock4 className="h-3.5 w-3.5" strokeWidth={2.5} />}
         value={
           <span className="font-mono text-2xl tabular-nums tracking-tight md:text-3xl">
-            {formatRelative(kpi.last_updated)}
+            {formatRelative(kpi.system_updated_at)}
           </span>
         }
-        hint={kpi.last_updated ?? "等待数据接入"}
+        hint={
+          kpi.source_reported_at
+            ? `系统抓取 ${formatRelative(kpi.system_updated_at)} · 官方上报 ${formatRelative(kpi.source_reported_at)}`
+            : (kpi.system_updated_at ?? "等待数据接入")
+        }
       />
     </div>
   );

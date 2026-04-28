@@ -21,7 +21,18 @@ class DashboardKPI(BaseModel):
     total_docks_available: int
     avg_occupancy_rate: float = Field(description="0-1 小数")
     alerts: AlertCountByLevel
-    last_updated: Optional[datetime]
+    # system_updated_at: 本系统最近一次成功抓取并入库时间（推荐用于"最近抓取"展示）
+    system_updated_at: Optional[datetime] = Field(
+        default=None, description="系统最近一次成功 ETL 抓取时间（fetch_log.finished_at）"
+    )
+    # source_reported_at: GBFS 官方 station_status.last_reported 的最大值
+    source_reported_at: Optional[datetime] = Field(
+        default=None, description="GBFS 官方最近上报时间（cur_station_status.last_reported max）"
+    )
+    # last_updated 保持兼容旧前端，等于 system_updated_at
+    last_updated: Optional[datetime] = Field(
+        default=None, description="兼容字段，同 system_updated_at"
+    )
 
 
 class RegionRankingItem(BaseModel):
@@ -83,6 +94,22 @@ class OperationalAreaRankingItem(BaseModel):
     docks_total: int
     capacity_total: int
     avg_occupancy: float
+
+
+class GridRegionItem(BaseModel):
+    """经纬度网格运营片区统计项."""
+
+    grid_code: str = Field(description="网格编码，如 40.73N-73.99W")
+    label: str = Field(description="人类可读标签，如 40.73°N, 73.99°W")
+    station_count: int
+    available_bikes: int
+    avg_occupancy_rate: float = Field(description="0~1 小数")
+    capacity: int
+    alert_count: int = 0
+
+
+class GridRegionsResponse(BaseModel):
+    items: list[GridRegionItem]
 
 
 class DashboardSummary(BaseModel):

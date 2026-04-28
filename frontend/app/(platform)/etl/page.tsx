@@ -89,10 +89,10 @@ export default function EtlPage() {
         <div className="flex items-center gap-2 rounded-lg border border-[var(--neon-amber)]/30 bg-[var(--neon-amber)]/[0.06] px-4 py-2.5 text-sm text-[var(--neon-amber)]">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
-            真实数据已过期（{status?.active_source_age_seconds
+            真实数据较久未更新（{status?.active_source_age_seconds
               ? `${Math.round(status.active_source_age_seconds / 60)} 分钟前`
               : "未知时间"}
-            ），Dashboard 仍展示最近一次真实数据，但可能不准确。
+            ），Dashboard 仍展示最近一次真实数据。
           </span>
         </div>
       )}
@@ -376,6 +376,16 @@ export default function EtlPage() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 说明 */}
+      <div className="flex items-start gap-2 rounded-lg border border-border/20 bg-muted/[0.03] px-4 py-2.5 text-xs text-muted-foreground"
+      >
+        <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>
+          系统每 5 分钟尝试抓取一次 GBFS 数据；页面展示的是最近一次成功抓取时间。
+          若某次抓取失败，最近成功时间不会更新。
+        </span>
       </div>
 
       {/* Fetch Logs */}

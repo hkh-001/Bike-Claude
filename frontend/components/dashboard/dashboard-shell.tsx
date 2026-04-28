@@ -7,6 +7,7 @@ import { AlertCircle } from "lucide-react";
 import { useDashboardSummary } from "@/lib/hooks/use-dashboard-summary";
 import { useAppSettings } from "@/lib/hooks/use-app-settings";
 import { useEtlStatus } from "@/lib/hooks/use-etl-status";
+import { useAlerts } from "@/lib/hooks/use-alerts";
 import { ErrorState } from "@/components/common/error-state";
 import { LiveTicker } from "@/components/dashboard/live-ticker";
 import { DashboardNavDock } from "@/components/dashboard/dashboard-nav-dock";
@@ -39,6 +40,14 @@ export function DashboardShell() {
   const { data, error, isLoading, isFetching, refetch } =
     useDashboardSummary(settings.dashboardRefreshInterval);
   const { data: etlStatus } = useEtlStatus(settings.dashboardRefreshInterval);
+  // 独立获取 Mock 演示告警（供 Live Alerts 面板「查看演示」按钮使用）
+  const { data: mockAlerts } = useAlerts(
+    null,
+    "open",
+    20,
+    settings.alertRefreshInterval,
+    "mock",
+  );
 
   // 首次加载且尚无任何数据 → 全屏 skeleton 大屏骨架
   if (isLoading && !data) {
@@ -91,14 +100,25 @@ export function DashboardShell() {
       )}
 
       {/* 数据新鲜度 banner */}
+      {etlStatus?.data_freshness === "fresh" && (
+        <div className="border-b border-[var(--neon-lime)]/30 bg-[color-mix(in_oklch,var(--neon-lime)_8%,transparent)] px-4 py-2 text-[11px] text-[var(--neon-lime)] md:px-6">
+          <span className="inline-flex items-center gap-1.5">
+            <AlertCircle className="h-3.5 w-3.5" />
+            真实数据正常更新 · 最近抓取{" "}
+            {etlStatus.active_source_age_seconds
+              ? `${Math.round(etlStatus.active_source_age_seconds / 60)} 分钟前`
+              : "刚刚"}
+          </span>
+        </div>
+      )}
       {etlStatus?.data_freshness === "stale" && (
         <div className="border-b border-[var(--neon-amber)]/30 bg-[color-mix(in_oklch,var(--neon-amber)_8%,transparent)] px-4 py-2 text-[11px] text-[var(--neon-amber)] md:px-6">
           <span className="inline-flex items-center gap-1.5">
             <AlertCircle className="h-3.5 w-3.5" />
-            真实数据已过期（{etlStatus.active_source_age_seconds
+            真实数据较久未更新 · 最近成功抓取{" "}
+            {etlStatus.active_source_age_seconds
               ? `${Math.round(etlStatus.active_source_age_seconds / 60)} 分钟前`
               : "未知时间"}
-            ），展示数据可能不准确
           </span>
         </div>
       )}
@@ -106,7 +126,7 @@ export function DashboardShell() {
         <div className="border-b border-[var(--neon-cyan)]/30 bg-[color-mix(in_oklch,var(--neon-cyan)_8%,transparent)] px-4 py-2 text-[11px] text-[var(--neon-cyan)] md:px-6">
           <span className="inline-flex items-center gap-1.5">
             <AlertCircle className="h-3.5 w-3.5" />
-            当前使用 Mock 兜底数据
+            当前为演示数据 / Mock 数据
           </span>
         </div>
       )}
@@ -123,7 +143,7 @@ export function DashboardShell() {
               <StationMap refetchInterval={settings.dashboardRefreshInterval} />
             </Section>
             <Section idx={2} className="xl:col-span-4">
-              <RecentAlertsPanel alerts={data.recent_alerts} />
+              <RecentAlertsPanel alerts={data.recent_alerts} mockAlerts={mockAlerts} />
             </Section>
           </div>
 

@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["etl"])
 
-_FRESHNESS_WINDOW = timedelta(minutes=5)
+_FRESHNESS_WINDOW = timedelta(minutes=15)
 
 
 def _utcnow_naive() -> datetime:

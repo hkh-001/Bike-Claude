@@ -80,16 +80,20 @@ def _get_active_source_filter(session: Session) -> str | None:
     return None
 
 
-def _alerts_count_by_level(session: Session) -> AlertCountByLevel:
-    rows = session.exec(
-        select(Alert.level, func.count())
-        .where(Alert.status == "open")
-        .group_by(Alert.level)
-    ).all()
+def _alerts_count_by_level(
+    session: Session, mode: str = "real"
+) -> AlertCountByLevel:
+    """按级别统计未处理告警数量（含动态风险告警）.
+
+    mode="real": 统计当前活跃真实数据源的告警 + 动态风险告警；
+    mode="mock": 只统计 Mock 演示告警。
+    """
+    # 复用 get_recent_alerts 的合并逻辑（alert 表 + 动态风险告警），取大 limit 保证全量
+    alerts = get_recent_alerts(session, limit=99999, mode=mode)
     bucket = {"info": 0, "warning": 0, "critical": 0}
-    for level, count in rows:
-        if level in bucket:
-            bucket[level] = int(count)
+    for a in alerts:
+        if a.level in bucket:
+            bucket[a.level] += 1
     return AlertCountByLevel(**bucket)
 
 
@@ -138,9 +142,30 @@ def get_kpi(session: Session) -> DashboardKPI:
             select(func.coalesce(func.avg(CurStationStatus.occupancy_rate), 0.0))
         ).one()
 
-    last_updated = session.exec(
-        select(func.max(CurStationStatus.updated_at))
-    ).one()
+    # 系统最近一次成功抓取时间（fetch_log）
+    latest_success_log = session.exec(
+        select(FetchLog)
+        .join(GbfsFeed, FetchLog.feed_id == GbfsFeed.id)
+        .join(DataSource, GbfsFeed.source_id == DataSource.id)
+        .where(FetchLog.status == "success")
+        .order_by(FetchLog.finished_at.desc())
+        .limit(1)
+    ).first()
+    system_updated_at: datetime | None = None
+    if latest_success_log and latest_success_log.finished_at:
+        system_updated_at = latest_success_log.finished_at
+
+    # GBFS 官方最近上报时间（cur_station_status.last_reported）
+    if active_source:
+        source_reported_at = session.exec(
+            select(func.max(CurStationStatus.last_reported))
+            .join(Station, Station.id == CurStationStatus.station_id)
+            .where(station_filter)
+        ).one()
+    else:
+        source_reported_at = session.exec(
+            select(func.max(CurStationStatus.last_reported))
+        ).one()
 
     return DashboardKPI(
         total_stations=int(total_stations or 0),
@@ -149,7 +174,9 @@ def get_kpi(session: Session) -> DashboardKPI:
         total_docks_available=int(docks_sum or 0),
         avg_occupancy_rate=float(round(avg_occ or 0.0, 4)),
         alerts=_alerts_count_by_level(session),
-        last_updated=last_updated,
+        system_updated_at=system_updated_at,
+        source_reported_at=source_reported_at,
+        last_updated=system_updated_at,
     )
 
 
@@ -180,8 +207,8 @@ def get_region_ranking(session: Session, limit: int = 5) -> list[RegionRankingIt
         ).one() if station_ids else 0.0
         open_alerts = session.exec(
             select(func.count(Alert.id))
-            .where(Alert.region_id == region.id, Alert.status == "open")
-        ).one() if region.id else 0
+            .where(Alert.station_id.in_(station_ids), Alert.status == "open")
+        ).one() if station_ids else 0
 
         region_stats.append(
             RegionRankingItem(
@@ -351,10 +378,134 @@ def get_risks(session: Session, limit_per_type: int = 10) -> RisksResponse:
     return RisksResponse(empty_risks=empty_risks, full_risks=full_risks)
 
 
-def get_recent_alerts(session: Session, limit: int = 5) -> list[RecentAlertItem]:
+def _build_dynamic_risk_alerts(
+    session: Session,
+    active_source: str,
+    existing_items: list[RecentAlertItem],
+    level_filter: str | None = None,
+    limit: int = 100,
+) -> list[RecentAlertItem]:
+    """根据当前 cur_station_status 为真实数据源动态生成风险告警.
+
+    与 existing_items（alert 表已有记录）按 (station_code, type) 去重，
+    避免同一站点同一风险重复展示。
+    """
+    # 已有告警的去重 key
+    existing_keys = {
+        (a.station_code, a.type) for a in existing_items if a.station_code
+    }
+
+    rows = session.exec(
+        select(Station, CurStationStatus)
+        .join(CurStationStatus, CurStationStatus.station_id == Station.id, isouter=True)
+        .where(Station.source_system == active_source)
+    ).all()
+
+    dynamic_items: list[RecentAlertItem] = []
+    for station, status in rows:
+        risk_type = _classify_risk_type(station, status)
+        if risk_type == "normal":
+            continue
+
+        key = (station.code, risk_type)
+        if key in existing_keys:
+            continue
+
+        # level 映射
+        if risk_type == "offline":
+            level = "critical"
+        elif risk_type == "abnormal":
+            level = "critical"
+        elif risk_type == "empty":
+            level = "critical" if (status and status.bikes_available == 0) else "warning"
+        elif risk_type == "full":
+            level = "critical" if (status and status.docks_available == 0) else "warning"
+        else:
+            level = "info"
+
+        if level_filter and level != level_filter:
+            continue
+
+        # 生成文案
+        if risk_type == "empty":
+            title = f"{station.name} 空车风险"
+            bikes = status.bikes_available if status else 0
+            message = f"该站点可借车辆仅 {bikes} 辆，需调度补车。"
+        elif risk_type == "full":
+            title = f"{station.name} 满桩风险"
+            docks = status.docks_available if status else 0
+            occ = round((status.occupancy_rate * 100) if status else 0, 1)
+            message = f"该站点可还桩位仅 {docks} 位（占用率 {occ}%），需调度疏车。"
+        elif risk_type == "offline":
+            title = f"{station.name} 站点离线"
+            message = "站点状态不可用，请检查设备或通信链路。"
+        elif risk_type == "abnormal":
+            title = f"{station.name} 服务异常"
+            renting = status.is_renting if status else False
+            returning = status.is_returning if status else False
+            parts: list[str] = []
+            if not renting:
+                parts.append("不可租车")
+            if not returning:
+                parts.append("不可还车")
+            reason = "、".join(parts) if parts else "租还功能异常"
+            message = f"站点{reason}，需人工核查。"
+        else:
+            title = f"{station.name} 异常"
+            message = "站点出现未知异常，请检查。"
+
+        region_code: Optional[str] = None
+        if station.region_id:
+            region = session.get(Region, station.region_id)
+            region_code = region.code if region else None
+
+        created_at = status.updated_at if status else _utcnow_naive()
+
+        # 虚拟 ID：负整数，避免与真实 alert id 冲突
+        type_code = {"empty": 1, "full": 2, "offline": 3, "abnormal": 4}.get(risk_type, 0)
+        virtual_id = -(station.id or 0) * 10 - type_code
+
+        dynamic_items.append(
+            RecentAlertItem(
+                id=virtual_id,
+                level=level,
+                type=risk_type,
+                title=title,
+                message=message,
+                status="open",
+                station_code=station.code,
+                region_code=region_code,
+                created_at=created_at,
+            )
+        )
+
+    # 排序：critical > warning > info，同级别按时间倒序
+    level_order = {"critical": 0, "warning": 1, "info": 2}
+    dynamic_items.sort(key=lambda a: a.created_at, reverse=True)
+    dynamic_items.sort(key=lambda a: level_order.get(a.level, 3))
+    return dynamic_items[:limit]
+
+
+def get_recent_alerts(
+    session: Session, limit: int = 5, mode: str = "real"
+) -> list[RecentAlertItem]:
+    """最近未处理告警.
+
+    mode="real": 只返回当前活跃真实数据源的告警；
+    mode="mock": 只返回 Mock 演示告警。
+    """
+    if mode == "real":
+        active_source = _get_active_source_filter(session)
+        if not active_source:
+            return []
+        station_filter = Station.source_system == active_source
+    else:
+        station_filter = Station.source_system == "mock"
+
     rows = session.exec(
         select(Alert)
-        .where(Alert.status == "open")
+        .join(Station, Station.id == Alert.station_id)
+        .where(Alert.status == "open", station_filter)
         .order_by(Alert.created_at.desc())
         .limit(limit)
     ).all()
@@ -386,6 +537,17 @@ def get_recent_alerts(session: Session, limit: int = 5) -> list[RecentAlertItem]
                 created_at=alert.created_at,
             )
         )
+
+    # real 模式下补充动态风险告警
+    if mode == "real" and active_source:
+        dynamic = _build_dynamic_risk_alerts(session, active_source, items, limit=limit)
+        items.extend(dynamic)
+        # 重新排序并截断
+        level_order = {"critical": 0, "warning": 1, "info": 2}
+        items.sort(key=lambda a: a.created_at, reverse=True)
+        items.sort(key=lambda a: level_order.get(a.level, 3))
+        items = items[:limit]
+
     return items
 
 
@@ -575,11 +737,26 @@ def get_alerts(
     level: str | None = None,
     status: str = "open",
     limit: int = 100,
+    mode: str = "real",
 ) -> list[RecentAlertItem]:
-    """告警列表，支持级别和状态筛选，供 /alerts 页面使用."""
+    """告警列表，支持级别和状态筛选，供 /alerts 页面使用.
+
+    mode="real": 只返回当前活跃真实数据源的告警；
+    mode="mock": 只返回 Mock 演示告警。
+    """
+    active_source = _get_active_source_filter(session)
+
+    if mode == "real":
+        if not active_source:
+            return []
+        station_filter = Station.source_system == active_source
+    else:
+        station_filter = Station.source_system == "mock"
+
     stmt = (
         select(Alert)
-        .where(Alert.status == status)
+        .join(Station, Station.id == Alert.station_id)
+        .where(Alert.status == status, station_filter)
         .order_by(Alert.created_at.desc())
         .limit(limit)
     )
@@ -615,6 +792,19 @@ def get_alerts(
                 created_at=alert.created_at,
             )
         )
+
+    # real 模式下补充动态风险告警（仅限 open 状态）
+    if mode == "real" and active_source and status == "open":
+        dynamic = _build_dynamic_risk_alerts(
+            session, active_source, items, level_filter=level, limit=limit
+        )
+        items.extend(dynamic)
+        # 重新排序并截断
+        level_order = {"critical": 0, "warning": 1, "info": 2}
+        items.sort(key=lambda a: a.created_at, reverse=True)
+        items.sort(key=lambda a: level_order.get(a.level, 3))
+        items = items[:limit]
+
     return items
 
 

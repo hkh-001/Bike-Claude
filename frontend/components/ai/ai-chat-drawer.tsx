@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Zap, Database, Radio } from "lucide-react";
+import { Bot, Zap, Database, Radio, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAiChat } from "@/lib/hooks/use-ai-chat";
@@ -20,6 +20,7 @@ export function AiChatDrawer({ open, onOpenChange }: AiChatDrawerProps) {
     error,
     handleSend,
     handleSuggestionSelect,
+    handleClearHistory,
     showSuggestions,
   } = useAiChat();
 
@@ -51,6 +52,15 @@ export function AiChatDrawer({ open, onOpenChange }: AiChatDrawerProps) {
             <span className="flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400 ring-1 ring-violet-500/20">
               <Radio className="h-2.5 w-2.5" /> SSE
             </span>
+            {messages.length > 0 && (
+              <button
+                onClick={handleClearHistory}
+                title="清除聊天记录"
+                className="ml-1 flex h-6 w-6 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 

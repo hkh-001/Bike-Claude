@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Zap, Database, Radio } from "lucide-react";
+import { Bot, Zap, Database, Radio, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAiChat } from "@/lib/hooks/use-ai-chat";
 import { AiMessageList } from "@/components/ai/ai-message-list";
@@ -14,6 +14,7 @@ export default function AiPage() {
     error,
     handleSend,
     handleSuggestionSelect,
+    handleClearHistory,
     showSuggestions,
   } = useAiChat();
 
@@ -44,6 +45,15 @@ export default function AiPage() {
           <span className="flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400 ring-1 ring-violet-500/20">
             <Radio className="h-2.5 w-2.5" /> SSE
           </span>
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearHistory}
+              title="清除聊天记录"
+              className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

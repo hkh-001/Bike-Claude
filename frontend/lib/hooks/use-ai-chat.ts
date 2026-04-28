@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import type { AiMessage, AiRole, AiToolCall, ChatMessagePayload } from "@/types/ai";
+import type { AiMessage, AiToolCall, ChatMessagePayload } from "@/types/ai";
 import { streamAiChat, chatOnce } from "@/lib/api/ai-stream";
 import { useAppSettings } from "./use-app-settings";
+import { useAiChatHistory, buildChatContext, clearHistory } from "./use-ai-chat-history";
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -18,6 +19,11 @@ export function useAiChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // localStorage 持久化：加载 + 自动保存
+  const { handleClear } = useAiChatHistory(messages, (loaded) => {
+    setMessages(loaded);
+  });
 
   const appendToLastMessage = useCallback((content: string) => {
     setMessages((prev) => {
@@ -85,10 +91,12 @@ export function useAiChat() {
         },
       ]);
 
+      // 上下文策略：取最近 10 条 user/assistant 历史 + 当前用户消息
+      const context = buildChatContext(messages, 10);
       const history: ChatMessagePayload[] = [
-        ...messages.filter((m) => m.role === "user" || m.role === "assistant"),
+        ...context,
         { role: "user", content: text },
-      ].map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+      ];
 
       if (!streamingEnabled) {
         // 非流式：直接调 /api/ai/chat
@@ -171,6 +179,17 @@ export function useAiChat() {
     [handleSend],
   );
 
+  const handleClearHistory = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    clearHistory();
+    setMessages([]);
+    setError(null);
+    setIsLoading(false);
+    setIsStreaming(false);
+  }, []);
+
   const showSuggestions = messages.length === 0 && !isLoading && !error;
 
   return {
@@ -180,6 +199,7 @@ export function useAiChat() {
     error,
     handleSend,
     handleSuggestionSelect,
+    handleClearHistory,
     showSuggestions,
   };
 }

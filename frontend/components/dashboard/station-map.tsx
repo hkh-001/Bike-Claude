@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import maplibregl, {
   type GeoJSONSource,
   type Map as MaplibreMap,
@@ -94,14 +95,87 @@ function MapCanvas({ data }: { data: StationGeoFeatureCollection }) {
   const mapRef = useRef<MaplibreMap | null>(null);
   const fittedRef = useRef(false);
   const dataRef = useRef(data);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const lastFocusedRef = useRef<string | null>(null);
   const [tileError, setTileError] = useState(false);
   const [debug, setDebug] = useState<MapDebugState>(initialDebug);
+
+  const searchParams = useSearchParams();
+  const focusStation = searchParams.get("focusStation");
 
   // 始终保持 dataRef 最新，便于 map.on("load") 等延迟回调读取
   useEffect(() => {
     dataRef.current = data;
     setDebug((d) => ({ ...d, featuresLen: data.features.length }));
   }, [data]);
+
+  // ---- focusStation 联动：flyTo + Popup + 高亮 ----
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    if (!focusStation) {
+      // focusStation 被清除：移除 Popup 和高亮
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
+      }
+      const hlSrc = map.getSource("focused-station") as GeoJSONSource | undefined;
+      if (hlSrc) {
+        hlSrc.setData({ type: "FeatureCollection", features: [] });
+      }
+      lastFocusedRef.current = null;
+      return;
+    }
+    if (lastFocusedRef.current === focusStation) return;
+
+    const feature = data.features.find(
+      (f) => f.properties.station_code === focusStation
+    );
+    if (!feature) {
+      // 未找到站点，仅重置高亮
+      const hlSrc = map.getSource("focused-station") as GeoJSONSource | undefined;
+      if (hlSrc) {
+        hlSrc.setData({ type: "FeatureCollection", features: [] });
+      }
+      lastFocusedRef.current = focusStation;
+      return;
+    }
+
+    const [lng, lat] = feature.geometry.coordinates;
+
+    map.flyTo({
+      center: [lng, lat],
+      zoom: 15,
+      duration: 1000,
+      essential: true,
+    });
+
+    // 关闭旧 Popup
+    if (popupRef.current) {
+      popupRef.current.remove();
+    }
+
+    // 打开新 Popup
+    popupRef.current = new maplibregl.Popup({
+      offset: 14,
+      closeButton: true,
+      maxWidth: "280px",
+    })
+      .setLngLat([lng, lat])
+      .setHTML(buildPopupHtml(feature.properties))
+      .addTo(map);
+
+    // 更新高亮层
+    const hlSrc = map.getSource("focused-station") as GeoJSONSource | undefined;
+    if (hlSrc) {
+      hlSrc.setData({
+        type: "FeatureCollection",
+        features: [feature],
+      });
+    }
+
+    lastFocusedRef.current = focusStation;
+  }, [focusStation, data]);
 
   // ---- 初始化地图（仅一次）
   useEffect(() => {
@@ -277,6 +351,40 @@ function MapCanvas({ data }: { data: StationGeoFeatureCollection }) {
         });
       }
 
+      // 高亮层：聚焦站点 cyan 外圈
+      if (!map.getSource("focused-station")) {
+        map.addSource("focused-station", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+      }
+      if (!map.getLayer("focused-station-ring")) {
+        map.addLayer({
+          id: "focused-station-ring",
+          type: "circle",
+          source: "focused-station",
+          paint: {
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["get", "capacity"],
+              5,
+              18,
+              20,
+              26,
+              40,
+              32,
+              60,
+              38,
+            ],
+            "circle-color": "transparent",
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": "#5cd2e6",
+            "circle-stroke-opacity": 0.9,
+          },
+        });
+      }
+
       // 硬编码红色测试点（验证图层渲染管线）— 北京天安门附近
       if (!map.getSource("debug-pin")) {
         map.addSource("debug-pin", {
@@ -445,6 +553,10 @@ function MapCanvas({ data }: { data: StationGeoFeatureCollection }) {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
+      }
       map.remove();
       mapRef.current = null;
     };

@@ -1,7 +1,8 @@
 "use client";
 
-import { BatteryWarning, ParkingMeter, ChevronRight } from "lucide-react";
+import { BatteryWarning, ParkingMeter, ChevronRight, MapPin } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { DashboardPanel } from "@/components/dashboard/dashboard-panel";
@@ -24,6 +25,12 @@ type RiskPanelProps = {
  * 数据来源：dashboard summary 的 risk_stations（已包含两类）。
  */
 export function RiskPanel({ stations, topN = 5 }: RiskPanelProps) {
+  const router = useRouter();
+
+  const handleFocus = (code: string) => {
+    router.push(`/?focusStation=${encodeURIComponent(code)}`, { scroll: false });
+  };
+
   const empty = stations
     .filter((s) => s.risk_type === "empty")
     .sort((a, b) => a.bikes_available - b.bikes_available)
@@ -61,6 +68,7 @@ export function RiskPanel({ stations, topN = 5 }: RiskPanelProps) {
           accent="rose"
           icon={<BatteryWarning className="h-3.5 w-3.5" />}
           items={empty}
+          onItemFocus={handleFocus}
           metric={(s) => s.bikes_available}
           metricLabel={(s) => `${s.bikes_available} / ${s.capacity}`}
           fillRatio={(s) =>
@@ -76,6 +84,7 @@ export function RiskPanel({ stations, topN = 5 }: RiskPanelProps) {
           accent="amber"
           icon={<ParkingMeter className="h-3.5 w-3.5" />}
           items={full}
+          onItemFocus={handleFocus}
           metric={(s) => s.docks_available}
           metricLabel={(s) => `${s.docks_available} / ${s.capacity}`}
           fillRatio={(s) =>
@@ -107,6 +116,7 @@ function RiskColumn<T>({
   accent,
   icon,
   items,
+  onItemFocus,
   metric,
   metricLabel,
   fillRatio,
@@ -116,6 +126,7 @@ function RiskColumn<T>({
   accent: Accent;
   icon: React.ReactNode;
   items: T[];
+  onItemFocus?: (code: string) => void;
   metric: (item: T) => number;
   metricLabel: (item: T) => string;
   fillRatio: (item: T) => number;
@@ -149,7 +160,9 @@ function RiskColumn<T>({
             return (
               <li
                 key={station.station_id}
-                className="rounded-md border border-border/40 bg-card/40 px-3 py-2 transition-colors hover:border-border/70"
+                onClick={() => onItemFocus?.(station.code)}
+                className="rounded-md border border-border/40 bg-card/40 px-3 py-2 transition-colors hover:border-border/70 cursor-pointer"
+                title="点击在地图中定位"
               >
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="flex min-w-0 items-baseline gap-2">
@@ -163,13 +176,25 @@ function RiskColumn<T>({
                       {station.code}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <span className={cn("font-mono text-sm tabular-nums", accentText[accent])}>
                       {metricLabel(item)}
                     </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onItemFocus?.(station.code);
+                      }}
+                      className="flex items-center justify-center rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-[var(--neon-cyan)]/10 hover:text-[var(--neon-cyan)]"
+                      title="在地图中定位"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                    </button>
                     <Link
                       href={`/stations/${station.code}`}
-                      className="flex items-center justify-center rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-[var(--neon-cyan)]/10 hover:text-[var(--neon-cyan)]"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center justify-center rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-[var(--neon-violet)]/10 hover:text-[var(--neon-violet)]"
                       title="查看详情"
                     >
                       <ChevronRight className="h-3.5 w-3.5" />

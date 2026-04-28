@@ -1,11 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { ArrowUpRight, Cpu } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 import { formatClock, formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -97,16 +94,6 @@ export function LiveTicker({
 
       {/* 操作区 */}
       <div className="ml-auto flex items-center gap-1.5 lg:ml-3">
-        <Button
-          render={<Link href="/regions" />}
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground hover:text-[var(--neon-cyan)]"
-        >
-          <Cpu className="h-3.5 w-3.5" />
-          功能控制台
-          <ArrowUpRight className="h-3 w-3" />
-        </Button>
         <ThemeModeToggle />
       </div>
     </header>

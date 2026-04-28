@@ -62,13 +62,20 @@ _SYSTEM_PROMPT = """你是共享单车时空出行监控平台的智能运营分
 6. 不同板块之间用 `---` 分隔线隔开。
 7. 表格（如适用）：使用标准 Markdown 表格 `| 列1 | 列2 |` 格式。
 8. 绝对禁止在正文中使用 HTML 标签。
-9. 禁止在列表项内部嵌套大段文字，保持每条简短（一行或两行）。"""
+9. 禁止在列表项内部嵌套大段文字，保持每条简短（一行或两行）。
+
+[推理效率约束 — 必须严格遵守]
+- 你的内部推理（reasoning）必须简短，不要在 reasoning_content 中写完整的内部草稿或重复系统提示词。
+- 收到用户问题后，优先立即调用工具获取实时数据，然后直接生成最终回答。
+- 不要在 reasoning_content 中逐条列举所有可能的分析角度，聚焦核心结论即可。
+- 最终回答的总长度控制在 800 字以内。"""
 
 
 def _build_messages(request: ChatRequest, session: Session) -> list[dict[str, Any]]:
     """构造完整的对话消息列表，注入系统上下文。"""
     context = ai_context_service.build_context(session)
-    context_json = json.dumps(context, ensure_ascii=False, indent=2)
+    # 紧凑 JSON 减少输入 token（indent 会大幅增加 reasoning 负担）
+    context_json = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
 
     system_content = (
         f"{_SYSTEM_PROMPT}\n\n"
@@ -232,12 +239,12 @@ def _aggregate_tool_call(
 
 
 @router.post("/chat/stream")
-def chat_stream(
+async def chat_stream(
     request: ChatRequest, db: Session = Depends(get_session)
 ) -> StreamingResponse:
     messages = _build_messages(request, db)
 
-    def event_stream():
+    async def event_stream():
         try:
             max_rounds = 4
             for _round in range(max_rounds):
@@ -246,7 +253,7 @@ def chat_stream(
                 reasoning_buffer = ""
                 finish_reason: str | None = None
 
-                for chunk in kimi_client.stream_complete(
+                async for chunk in kimi_client.stream_complete_async(
                     messages, tools=ai_tools.TOOL_SCHEMAS, model=request.model
                 ):
                     delta = chunk.get("delta", {})
@@ -255,11 +262,20 @@ def chat_stream(
                     if delta.get("reasoning_content"):
                         reasoning_buffer += delta["reasoning_content"]
 
-                    if delta.get("content"):
+                    if delta.get("content") is not None:
                         content_buffer += delta["content"]
+
+                    # 只要有 content 或 reasoning_content 就 yield delta，
+                    # 确保前端在 reasoning 阶段也能收到事件并结束 loading
+                    if delta.get("content") is not None or delta.get("reasoning_content"):
+                        payload: dict[str, Any] = {}
+                        if delta.get("content") is not None:
+                            payload["content"] = delta["content"]
+                        if delta.get("reasoning_content"):
+                            payload["reasoning_content"] = delta["reasoning_content"]
                         yield (
                             f"event: delta\n"
-                            f"data: {json.dumps({'content': delta['content']}, ensure_ascii=False)}\n\n"
+                            f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                         )
 
                     if delta.get("tool_calls"):
@@ -315,11 +331,17 @@ def chat_stream(
                 f"data: {json.dumps({'message': 'AI 服务暂不可用：apikey.txt 未就绪'}, ensure_ascii=False)}\n\n"
             )
         except Exception as exc:
-            logger.warning("AI stream failed: %s", type(exc).__name__)
+            logger.warning("AI stream failed: %s - %s", type(exc).__name__, str(exc)[:200])
             yield (
                 f"event: error\n"
                 f"data: {json.dumps({'message': 'AI 服务暂不可用：调用 Kimi 接口失败'}, ensure_ascii=False)}\n\n"
             )
+
+        # 兜底：无论正常结束还是异常，最后都 yield done，防止前端永远 loading
+        yield (
+            f"event: done\n"
+            f"data: {json.dumps({'finish_reason': 'stop'}, ensure_ascii=False)}\n\n"
+        )
 
     return StreamingResponse(
         event_stream(),

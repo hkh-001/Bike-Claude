@@ -48,7 +48,29 @@ export function streamAiChat(
   const controller = new AbortController();
 
   const run = async () => {
+    // 读取超时：kimi-k2.6 reasoning 可能持续 60-120 秒，设为 180 秒
+    const READ_TIMEOUT_MS = 180000;
+    let readTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const resetReadTimeout = () => {
+      if (readTimeoutId) clearTimeout(readTimeoutId);
+      readTimeoutId = setTimeout(() => {
+        controller.abort();
+        callbacks.onError?.(
+          new Error("读取超时：AI 响应时间过长，请稍后重试"),
+        );
+      }, READ_TIMEOUT_MS);
+    };
+
+    const clearReadTimeout = () => {
+      if (readTimeoutId) {
+        clearTimeout(readTimeoutId);
+        readTimeoutId = null;
+      }
+    };
+
     try {
+      resetReadTimeout();
       const res = await fetch("/api/ai/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,10 +113,16 @@ export function streamAiChat(
 
         if (event === "delta") {
           try {
-            const parsed = JSON.parse(data) as { content?: string };
-            if (parsed.content) {
-              callbacks.onEvent?.({ type: "delta", content: parsed.content });
-            }
+            const parsed = JSON.parse(data) as {
+              content?: string | null;
+              reasoning_content?: string | null;
+            };
+            // 任何 delta 事件都表示模型在响应，都要通知前端（以结束 loading 状态）
+            // content 可能为 null（reasoning 阶段），用空字符串兜底
+            callbacks.onEvent?.({
+              type: "delta",
+              content: parsed.content ?? "",
+            });
           } catch {
             callbacks.onEvent?.({ type: "delta", content: data });
           }
@@ -168,6 +196,7 @@ export function streamAiChat(
         const { done, value } = await reader.read();
         if (done) break;
 
+        resetReadTimeout();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         // 保留最后一行（可能不完整）
@@ -201,9 +230,11 @@ export function streamAiChat(
         }
       }
       flushEvent();
+      clearReadTimeout();
 
       callbacks.onDone?.();
     } catch (err) {
+      clearReadTimeout();
       if ((err as Error).name === "AbortError") {
         // 用户主动取消，不算错误
         return;

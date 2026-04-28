@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from app.core.secrets import ApiKeyError, read_kimi_api_key
 
 if TYPE_CHECKING:
-    from openai import OpenAI
+    from openai import AsyncOpenAI, OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ _DEFAULT_MODEL = "kimi-k2.6"
 _BASE_URL = "https://api.moonshot.cn/v1"
 
 _client: "OpenAI | None" = None
+_async_client: "AsyncOpenAI | None" = None
 
 
 def _get_client() -> "OpenAI":
@@ -33,6 +34,22 @@ def _get_client() -> "OpenAI":
 
     _client = OpenAI(api_key=api_key, base_url=_BASE_URL)
     return _client
+
+
+def _get_async_client() -> "AsyncOpenAI":
+    """延迟初始化 AsyncOpenAI client；首次调用时才读 apikey.txt."""
+    global _async_client
+    if _async_client is not None:
+        return _async_client
+    try:
+        api_key = read_kimi_api_key()
+    except ApiKeyError as exc:
+        logger.warning("Kimi API key not ready: %s", exc)
+        raise
+    from openai import AsyncOpenAI
+
+    _async_client = AsyncOpenAI(api_key=api_key, base_url=_BASE_URL)
+    return _async_client
 
 
 def complete(
@@ -59,14 +76,16 @@ def complete(
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
     }
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
 
     try:
-        completion = client.chat.completions.create(**kwargs)
+        completion = client.chat.completions.create(
+            **kwargs, extra_body={"enable_reasoning": False}
+        )
     except Exception as exc:
         # 绝不记录 key；仅记录异常类型
         logger.warning("Kimi API call failed: %s", type(exc).__name__)
@@ -114,15 +133,18 @@ def stream_complete(
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "stream": True,
+        "timeout": 180.0,
     }
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
 
     try:
-        completion = client.chat.completions.create(**kwargs)
+        completion = client.chat.completions.create(
+            **kwargs, extra_body={"enable_reasoning": False}
+        )
     except Exception as exc:
         err_detail = ""
         if hasattr(exc, "body") and exc.body:
@@ -163,6 +185,83 @@ def stream_complete(
             else None,
         }
         # kimi-k2.6 等推理模型会返回 reasoning_content，tool-calling 多轮时必须回传
+        reasoning_delta = getattr(delta, "reasoning_content", None)
+        if reasoning_delta:
+            delta_payload["reasoning_content"] = reasoning_delta
+
+        yield {
+            "delta": delta_payload,
+            "finish_reason": finish_reason,
+        }
+
+
+async def stream_complete_async(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    model: str = _DEFAULT_MODEL,
+):
+    """异步流式调用 Kimi Chat Completion（支持 tool-calling）.
+
+    使用 AsyncOpenAI，避免在 FastAPI 同步路由中因线程/事件循环冲突导致挂住。
+
+    Yields dict chunks with keys ``delta`` (content + partial tool_calls)
+    and ``finish_reason``。
+    """
+    client = _get_async_client()
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 4096,
+        "stream": True,
+        "timeout": 180.0,
+    }
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+
+    try:
+        completion = await client.chat.completions.create(
+            **kwargs, extra_body={"enable_reasoning": False}
+        )
+    except Exception as exc:
+        err_detail = ""
+        if hasattr(exc, "body") and exc.body:
+            err_detail = str(exc.body)
+        elif hasattr(exc, "response") and exc.response:
+            err_detail = exc.response.text[:500]
+        else:
+            err_detail = str(exc)[:500]
+        logger.warning(
+            "Kimi API async stream call failed: %s - %s", type(exc).__name__, err_detail
+        )
+        raise
+
+    async for chunk in completion:
+        if not chunk.choices:
+            continue
+        choice = chunk.choices[0]
+        delta = choice.delta
+        finish_reason = choice.finish_reason
+
+        delta_payload: dict[str, Any] = {
+            "content": delta.content,
+            "tool_calls": [
+                {
+                    "index": tc.index,
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name if tc.function else None,
+                        "arguments": (
+                            tc.function.arguments if tc.function else None
+                        ),
+                    },
+                }
+                for tc in (delta.tool_calls or [])
+            ]
+            if delta.tool_calls
+            else None,
+        }
         reasoning_delta = getattr(delta, "reasoning_content", None)
         if reasoning_delta:
             delta_payload["reasoning_content"] = reasoning_delta

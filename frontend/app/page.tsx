@@ -11,9 +11,8 @@ export const metadata: Metadata = {
  * 首页 = 城市运营监控大屏。
  *
  * 路由结构：
- *  - 此 `app/page.tsx` 为大屏，独立全屏，不走 (platform) layout，没有 AppShell sidebar。
- *  - `(platform)/` 路由组下的功能页（regions/stations/alerts/trends/etl/ai/settings）走 AppShell。
- *  - LiveTicker 右侧「功能控制台 →」按钮跳转到功能页。
+ *  - 此 `app/page.tsx` 为大屏，独立全屏，不走 (platform) layout。
+ *  - `(platform)/` 路由组下的功能页走 ConsoleShell 统一外壳。
  */
 export default function DashboardHomePage() {
   return (

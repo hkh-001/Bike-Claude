@@ -9,6 +9,7 @@ import { useAppSettings } from "@/lib/hooks/use-app-settings";
 import { useEtlStatus } from "@/lib/hooks/use-etl-status";
 import { ErrorState } from "@/components/common/error-state";
 import { LiveTicker } from "@/components/dashboard/live-ticker";
+import { DashboardNavDock } from "@/components/dashboard/dashboard-nav-dock";
 import { KpiBar } from "@/components/dashboard/kpi-bar";
 import { StationMap } from "@/components/dashboard/station-map";
 import { TrendPanel } from "@/components/dashboard/trend-panel";
@@ -44,7 +45,8 @@ export function DashboardShell() {
     return (
       <div className="flex min-h-screen flex-col">
         <LiveTicker isFetching={true} />
-        <main className="flex-1 px-4 py-4 md:px-6 md:py-5">
+        <DashboardNavDock />
+        <main className="flex-1 px-4 py-4 md:pl-52 md:pr-6 md:py-5">
           <FullSkeleton />
         </main>
       </div>
@@ -56,7 +58,8 @@ export function DashboardShell() {
     return (
       <div className="flex min-h-screen flex-col">
         <LiveTicker isFetching={false} />
-        <main className="flex-1 px-4 py-6 md:px-6">
+        <DashboardNavDock />
+        <main className="flex-1 px-4 py-6 md:pl-52 md:pr-6">
           <div className="mx-auto max-w-3xl">
             <ErrorState
               title="无法加载首页大屏"
@@ -75,6 +78,7 @@ export function DashboardShell() {
   return (
     <div className="flex min-h-screen flex-col">
       <LiveTicker isFetching={isFetching} />
+      <DashboardNavDock />
 
       {/* 后续失败 banner（不影响渲染旧数据） */}
       {error && data && (
@@ -107,7 +111,7 @@ export function DashboardShell() {
         </div>
       )}
 
-      <main className="flex-1 px-4 py-4 md:px-6 md:py-5">
+      <main className="flex-1 px-4 py-4 md:pl-52 md:pr-6 md:py-5">
         <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4">
           <Section idx={0}>
             <KpiBar kpi={data.kpi} />

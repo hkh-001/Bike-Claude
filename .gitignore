@@ -1,0 +1,48 @@
+# --- secrets ---
+apikey.txt
+*.env
+**/.env
+**/.env.local
+
+# --- python / backend ---
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/*.db
+backend/*.db-journal
+backend/*.sqlite3
+*.egg-info/
+build/
+dist/
+
+# --- node / frontend ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/coverage/
+frontend/npm-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# --- editor / os ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- logs / runtime ---
+*.log
+*.pid
+uvicorn*.log
+backend.log
+server.log
+
+# --- claude ---
+.claude/

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Filter, Database, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { AlertTriangle, Filter, Database, Eye, MapPin, ExternalLink } from "lucide-react";
 import { useAlerts } from "@/lib/hooks/use-alerts";
 import { useAppSettings } from "@/lib/hooks/use-app-settings";
 import { Badge } from "@/components/ui/badge";
@@ -162,7 +164,7 @@ export default function AlertsPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-border/40 bg-card/40 overflow-hidden">
-        <div className="grid grid-cols-[90px_1fr_120px_120px_140px] gap-4 px-4 py-3 border-b border-border/40 bg-muted/20 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="grid grid-cols-[90px_1fr_140px_100px_140px] gap-4 px-4 py-3 border-b border-border/40 bg-muted/20 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           <span>级别</span>
           <span>标题 / 消息</span>
           <span>站点 / 区域</span>
@@ -189,7 +191,7 @@ export default function AlertsPage() {
             </div>
           )}
           {data?.map((a) => (
-            <AlertRow key={a.id} alert={a} />
+            <AlertRow key={a.id} alert={a} mode={mode} />
           ))}
         </div>
       </div>
@@ -197,9 +199,11 @@ export default function AlertsPage() {
   );
 }
 
-function AlertRow({ alert }: { alert: RecentAlertItem }) {
-  const accent = alertLevelAccent(alert.level);
-  const label = alertLevelLabel(alert.level);
+function AlertRow({ alert: item, mode }: { alert: RecentAlertItem; mode: "real" | "mock" }) {
+  const router = useRouter();
+  const accent = alertLevelAccent(item.level);
+  const label = alertLevelLabel(item.level);
+  const hasStation = !!item.station_code;
 
   const accentMap: Record<string, string> = {
     rose: "var(--neon-rose)",
@@ -208,8 +212,10 @@ function AlertRow({ alert }: { alert: RecentAlertItem }) {
   };
   const color = accentMap[accent] ?? "var(--neon-cyan)";
 
+  const isMock = mode === "mock";
+
   return (
-    <div className="grid grid-cols-[90px_1fr_120px_120px_140px] gap-4 px-4 py-3 border-b border-border/20 hover:bg-muted/10 transition-colors items-start">
+    <div className="grid grid-cols-[90px_1fr_140px_100px_140px] gap-4 px-4 py-3 border-b border-border/20 hover:bg-muted/10 transition-colors items-start">
       <span
         className="inline-flex items-center w-fit rounded-full px-2 py-0.5 text-[10px] font-medium ring-1"
         style={{
@@ -223,51 +229,95 @@ function AlertRow({ alert }: { alert: RecentAlertItem }) {
 
       <div className="flex flex-col gap-1 min-w-0">
         <span className="text-sm font-medium text-foreground truncate">
-          {alert.title}
+          {item.title}
         </span>
         <span className="text-[11px] text-muted-foreground line-clamp-2">
-          {alert.message}
+          {item.message}
         </span>
       </div>
 
-      <div className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-        {alert.station_code && (
-          <span className="font-mono text-[10px] text-foreground/70">
-            {alert.station_code}
+      {/* 站点 / 区域 */}
+      <div className="flex flex-col gap-0.5 min-w-0">
+        {hasStation ? (
+          isMock ? (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground cursor-not-allowed"
+              title="演示数据不支持详情页跳转"
+            >
+              <span className="truncate">
+                {item.station_name ?? item.station_code}
+              </span>
+            </span>
+          ) : (
+            <Link
+              href={`/stations/${encodeURIComponent(item.station_code!)}`}
+              className="inline-flex items-center gap-1 text-[11px] text-[var(--neon-cyan)] hover:text-cyan-200 hover:underline transition-colors"
+              title="查看站点详情"
+            >
+              <span className="truncate">
+                {item.station_name ?? item.station_code}
+              </span>
+              <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-60" />
+            </Link>
+          )
+        ) : (
+          <span className="text-[11px] text-muted-foreground">—</span>
+        )}
+        {(item.region_name || item.region_code) && (
+          <span className="font-mono text-[10px] text-muted-foreground/70 truncate">
+            {item.region_name ?? item.region_code}
           </span>
         )}
-        {alert.region_code && (
-          <span className="font-mono text-[10px]">{alert.region_code}</span>
-        )}
-        {!alert.station_code && !alert.region_code && <span>—</span>}
       </div>
 
       <span
         className={cn(
           "inline-flex items-center w-fit rounded-full px-2 py-0.5 text-[10px] font-medium ring-1",
-          alert.status === "open"
+          item.status === "open"
             ? "bg-[var(--neon-rose)]/10 text-[var(--neon-rose)] ring-[var(--neon-rose)]/20"
             : "bg-[var(--neon-lime)]/10 text-[var(--neon-lime)] ring-[var(--neon-lime)]/20"
         )}
       >
-        {alert.status === "open" ? "未处理" : "已处理"}
+        {item.status === "open" ? "未处理" : "已处理"}
       </span>
 
-      <span className="text-right text-[11px] text-muted-foreground font-mono tabular-nums">
-        {new Date(alert.created_at).toLocaleString("zh-CN", {
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </span>
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-right text-[11px] text-muted-foreground font-mono tabular-nums">
+          {new Date(item.created_at).toLocaleString("zh-CN", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+        {hasStation && (
+          <button
+            onClick={() => {
+              if (isMock) {
+                window.alert("当前为演示数据，该站点可能不存在于真实数据源中");
+                return;
+              }
+              router.push(`/?focusStation=${encodeURIComponent(item.station_code!)}`);
+            }}
+            className={cn(
+              "inline-flex items-center justify-center rounded-md p-1 transition-colors",
+              isMock
+                ? "text-muted-foreground/40 cursor-not-allowed"
+                : "text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/10"
+            )}
+            title={isMock ? "演示模式不支持地图定位" : "地图定位"}
+          >
+            <MapPin className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function AlertSkeletonRow() {
   return (
-    <div className="grid grid-cols-[90px_1fr_120px_120px_140px] gap-4 px-4 py-3 border-b border-border/20 items-start">
+    <div className="grid grid-cols-[90px_1fr_140px_100px_140px] gap-4 px-4 py-3 border-b border-border/20 items-start">
       <Skeleton className="h-5 w-12" />
       <div className="flex flex-col gap-1">
         <Skeleton className="h-4 w-48" />

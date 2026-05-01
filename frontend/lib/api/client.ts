@@ -214,7 +214,9 @@ export type RecentAlertItem = {
   message: string;
   status: string;
   station_code: string | null;
+  station_name: string | null;
   region_code: string | null;
+  region_name: string | null;
   created_at: string;
 };
 

@@ -455,9 +455,11 @@ def _build_dynamic_risk_alerts(
             message = "站点出现未知异常，请检查。"
 
         region_code: Optional[str] = None
+        region_name: Optional[str] = None
         if station.region_id:
             region = session.get(Region, station.region_id)
             region_code = region.code if region else None
+            region_name = region.name if region else None
 
         created_at = status.updated_at if status else _utcnow_naive()
 
@@ -474,7 +476,9 @@ def _build_dynamic_risk_alerts(
                 message=message,
                 status="open",
                 station_code=station.code,
+                station_name=station.name,
                 region_code=region_code,
+                region_name=region_name,
                 created_at=created_at,
             )
         )
@@ -513,16 +517,21 @@ def get_recent_alerts(
     items: list[RecentAlertItem] = []
     for alert in rows:
         station_code: Optional[str] = None
+        station_name: Optional[str] = None
         region_code: Optional[str] = None
+        region_name: Optional[str] = None
         if alert.station_id:
             station = session.get(Station, alert.station_id)
             station_code = station.code if station else None
+            station_name = station.name if station else None
             if station and station.region_id:
                 region = session.get(Region, station.region_id)
                 region_code = region.code if region else None
+                region_name = region.name if region else None
         elif alert.region_id:
             region = session.get(Region, alert.region_id)
             region_code = region.code if region else None
+            region_name = region.name if region else None
 
         items.append(
             RecentAlertItem(
@@ -533,7 +542,9 @@ def get_recent_alerts(
                 message=alert.message,
                 status=alert.status,
                 station_code=station_code,
+                station_name=station_name,
                 region_code=region_code,
+                region_name=region_name,
                 created_at=alert.created_at,
             )
         )
@@ -768,16 +779,21 @@ def get_alerts(
     items: list[RecentAlertItem] = []
     for alert in rows:
         station_code: Optional[str] = None
+        station_name: Optional[str] = None
         region_code: Optional[str] = None
+        region_name: Optional[str] = None
         if alert.station_id:
             station = session.get(Station, alert.station_id)
             station_code = station.code if station else None
+            station_name = station.name if station else None
             if station and station.region_id:
                 region = session.get(Region, station.region_id)
                 region_code = region.code if region else None
+                region_name = region.name if region else None
         elif alert.region_id:
             region = session.get(Region, alert.region_id)
             region_code = region.code if region else None
+            region_name = region.name if region else None
 
         items.append(
             RecentAlertItem(
@@ -788,7 +804,9 @@ def get_alerts(
                 message=alert.message,
                 status=alert.status,
                 station_code=station_code,
+                station_name=station_name,
                 region_code=region_code,
+                region_name=region_name,
                 created_at=alert.created_at,
             )
         )

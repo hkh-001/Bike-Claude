@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, BellRing, ShieldAlert, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, BellRing, ShieldAlert, Eye, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -129,19 +130,30 @@ export function RecentAlertsPanel({
 }
 
 function AlertList({ alerts }: { alerts: RecentAlertItem[] }) {
+  const router = useRouter();
+
   return (
     <ul className="flex flex-col">
       {alerts.map((alert, idx) => {
         const accent = alertLevelAccent(alert.level);
         const Icon = levelIcon[alert.level] ?? BellRing;
         const isLast = idx === alerts.length - 1;
+        const hasStation = !!alert.station_code;
+
         return (
           <li
             key={alert.id}
+            onClick={() => {
+              if (alert.station_code) {
+                router.push(`/?focusStation=${encodeURIComponent(alert.station_code)}`);
+              }
+            }}
             className={cn(
               "group flex gap-3 py-3 transition-colors",
               !isLast && "border-b border-border/40",
+              hasStation && "cursor-pointer hover:bg-white/[0.04]",
             )}
+            title={hasStation ? "点击在地图中定位站点" : undefined}
           >
             <div className="flex flex-col items-center pt-0.5">
               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", accentDot[accent])} />
@@ -163,6 +175,9 @@ function AlertList({ alerts }: { alerts: RecentAlertItem[] }) {
                 <span className="truncate text-sm font-medium text-foreground">
                   {alert.title}
                 </span>
+                {hasStation && (
+                  <MapPin className="ml-auto h-3 w-3 shrink-0 opacity-0 text-[var(--neon-cyan)] transition-opacity group-hover:opacity-100" />
+                )}
               </div>
               <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                 {alert.message}

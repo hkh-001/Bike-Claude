@@ -69,7 +69,9 @@ class RecentAlertItem(BaseModel):
     message: str
     status: str
     station_code: Optional[str]
+    station_name: Optional[str]
     region_code: Optional[str]
+    region_name: Optional[str]
     created_at: datetime
 
 
